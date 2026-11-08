@@ -1,0 +1,18 @@
+[package]
+name = "humchord"
+version = "0.1.0"
+edition = "2021"
+description = "Detect a hummed pitch and generate harmonizing chords (CI1 / PipeWire)"
+license = "MIT"
+
+[[bin]]
+name = "humchord"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+hound = "3"
+ctrlc = "3"
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow", "x11"] }
+rustfft = "6"
