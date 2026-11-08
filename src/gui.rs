@@ -29,8 +29,8 @@ pub fn run(_play: bool, kind: usize, rate: u32, threshold: f32, gate: f32) -> Re
     let _h = engine::spawn(shared.clone(), rate, threshold, gate);
     let native = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([980.0, 760.0])
-            .with_min_inner_size([760.0, 600.0])
+            .with_inner_size([1100.0, 800.0])
+            .with_min_inner_size([800.0, 620.0])
             .with_title("Humchord"),
         ..Default::default()
     };
@@ -48,6 +48,7 @@ pub fn run(_play: bool, kind: usize, rate: u32, threshold: f32, gate: f32) -> Re
                 last_dur: 0.0,
                 drag: None,
                 page: 0,
+                daw: crate::gui_daw::DawUi::default(),
             }))
         }),
     )
@@ -65,6 +66,7 @@ struct HumUi {
     last_dur: f32,
     drag: Option<u8>,
     page: u8,
+    daw: crate::gui_daw::DawUi,
 }
 
 impl eframe::App for HumUi {
@@ -100,8 +102,9 @@ impl eframe::App for HumUi {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("HUMCHORD").size(18.0).color(ACCENT).strong());
                     ui.add_space(12.0);
-                    tab_btn(ui, &mut self.page, 0, "Analyze");
-                    tab_btn(ui, &mut self.page, 1, "Progressions");
+                    tab_btn(ui, &mut self.page, 0, "1  Hum");
+                    tab_btn(ui, &mut self.page, 1, "2  Chords");
+                    tab_btn(ui, &mut self.page, 2, "3  DAW");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             RichText::new(if ci1 { "CI1 ready" } else { "default input" })
@@ -115,7 +118,9 @@ impl eframe::App for HumUi {
                     ui.colored_label(Color32::from_rgb(255, 110, 110), e);
                 }
 
-                if self.page == 1 {
+                if self.page == 2 {
+                    crate::gui_daw::daw_page(ui, &self.shared, &mut self.daw, analysis.as_ref());
+                } else if self.page == 1 {
                     progressions_page(ui, analysis.as_ref(), &self.shared);
                 } else {
                 ui.horizontal(|ui| {

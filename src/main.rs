@@ -1,6 +1,9 @@
 mod audio;
+mod daw;
 mod engine;
 mod gui;
+mod gui_daw;
+mod sample;
 mod spec;
 mod synth;
 mod theory;

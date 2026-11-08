@@ -3,12 +3,14 @@
 use anyhow::Result;
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::audio::{ci1_present, write_wav_mono, Capture, Playback, CI1_SINK, CI1_SOURCE};
+use crate::daw::Song;
+use crate::sample::Sample;
 use crate::spec::{mag_at, Stft};
 use crate::synth::ChordSynth;
 use crate::theory::{freq_to_midi, midi_to_freq, midi_to_name, CHORD_KINDS};
@@ -64,6 +66,10 @@ pub struct Shared {
     pub queue: Mutex<VecDeque<(Vec<i32>, u32)>>,
     pub prog_step: AtomicI32,
     pub preview_midis: Mutex<Vec<i32>>,
+    pub song: Mutex<Song>,
+    pub sampler: Mutex<Option<Sample>>,
+    pub daw_play: AtomicBool,
+    pub playhead: AtomicU64,
 }
 
 impl Shared {
@@ -85,6 +91,10 @@ impl Shared {
             queue: Mutex::new(VecDeque::new()),
             prog_step: AtomicI32::new(-1),
             preview_midis: Mutex::new(Vec::new()),
+            song: Mutex::new(Song::new()),
+            sampler: Mutex::new(None),
+            daw_play: AtomicBool::new(false),
+            playhead: AtomicU64::new(0),
         })
     }
 }
@@ -195,10 +205,42 @@ fn run(shared: Arc<Shared>, rate: u32) -> Result<()> {
             if started {
                 continue;
             }
-            play_dev = None;
-            synth.silence();
-            if !rec {
-                thread::sleep(Duration::from_millis(20));
+            if shared.daw_play.load(Ordering::Relaxed) {
+                let start = shared.playhead.load(Ordering::Relaxed);
+                let mix = match (shared.song.lock(), shared.sampler.lock()) {
+                    (Ok(song), Ok(sm)) => song.mix_block(start, hop, sm.as_ref()),
+                    _ => vec![0.0f32; hop],
+                };
+                if play_dev.is_none() {
+                    play_dev = Playback::start(rate, 2, output, latency).ok();
+                }
+                let mut stereo = Vec::with_capacity(hop * 2);
+                for s in &mix {
+                    let v = (*s * 32767.0).clamp(-32767.0, 32767.0) as i16;
+                    stereo.push(v);
+                    stereo.push(v);
+                }
+                if let Some(p) = play_dev.as_mut() {
+                    let _ = p.write_s16(&stereo);
+                }
+                let next = start + hop as u64;
+                shared.playhead.store(next, Ordering::Relaxed);
+                let max = shared
+                    .song
+                    .lock()
+                    .ok()
+                    .map(|s| (s.length_beats() * 60.0 / s.bpm.max(1.0) * rate as f32) as u64)
+                    .unwrap_or(rate as u64 * 8);
+                if next > max {
+                    shared.daw_play.store(false, Ordering::Relaxed);
+                    shared.playhead.store(0, Ordering::Relaxed);
+                }
+            } else {
+                play_dev = None;
+                synth.silence();
+                if !rec {
+                    thread::sleep(Duration::from_millis(20));
+                }
             }
         }
         let _ = hop_dur;
